@@ -159,6 +159,11 @@ class Spotify {
         let total = initialTracksResponse.total;
         log(`Spotify reports ${total} total liked tracks.`);
 
+        if (total === countResult?.count) {
+            log('No new tracks found.');
+            return;
+        }
+
         const savedTrackIds = new Set(
             (await db('liked_tracks')
                     .join('tracks', 'liked_tracks.track_id', 'tracks.id')
@@ -224,13 +229,7 @@ class Spotify {
             log(`Processed ${Math.min(offset + limit, total)} out of ${total} tracks from Spotify.`);
             offset += limit;
         }
-
-        if (offset === total) {
-            log('No new tracks found.');
-        }
     }
-
-
 
     async insertSavedTracks(userId: string, savedTracks: SpotifyApi.SavedTrackObject[]): Promise<void> {
         const artistIds = savedTracks.map(track => track.track.artists[0].id);
