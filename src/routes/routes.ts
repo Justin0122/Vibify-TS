@@ -113,9 +113,23 @@ router.get('/recommendations/:id', authenticateApiKey, catchErrors(async (req: R
     res.status(200).json(recommendations);
 }));
 
-router.get('/save-liked-tracks/:id', authenticateApiKey, catchErrors(async (req: Request, res: Response) => {
-    const savedTracks = await spotify.saveLikedTracks(req.params.id);
-    res.status(200).json(savedTracks);
-}));
+router.get('/save-liked-tracks/:id', authenticateApiKey, async (req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const log = (message: string) => {
+        res.write(`${message}\n`); // Send each log as a new line
+    };
+
+    try {
+        await spotify.saveLikedTracks(req.params.id, log);
+        log('Done processing tracks.');
+    } catch (error) {
+        log(`Error: ${(error as Error).message}`);
+    } finally {
+        res.end();
+    }
+});
 
 export default router;

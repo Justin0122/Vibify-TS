@@ -135,9 +135,9 @@ class Spotify {
         });
     }
 
-    async saveLikedTracks(userId: string): Promise<SpotifyApi.SavedTrackObject[]> {
+    async saveLikedTracks(userId: string, log: (message: string) => void): Promise<void> {
         const user = await db('users')
-            .where({user_id: userId})
+            .where({ user_id: userId })
             .select('id')
             .first();
 
@@ -147,22 +147,22 @@ class Spotify {
 
         // Get count of liked tracks already saved
         const countResult = await db('liked_tracks')
-            .where({user_id: user.id})
+            .where({ user_id: user.id })
             .count('* as count')
             .first();
         let savedTracksCount = Number(countResult?.count ?? 0);
 
-        console.log(`Starting offset set to ${savedTracksCount} based on already saved tracks.`);
+        log(`Starting offset set to ${savedTracksCount} based on already saved tracks.`);
 
         // Fetch the actual total count from Spotify
-        const initialTracksResponse = await this.getSavedTracks(userId, {limit: 1, offset: 0});
+        const initialTracksResponse = await this.getSavedTracks(userId, { limit: 1, offset: 0 });
         let total = initialTracksResponse.total;
-        console.log(`Spotify reports ${total} total liked tracks.`);
+        log(`Spotify reports ${total} total liked tracks.`);
 
         const savedTrackIds = new Set(
             (await db('liked_tracks')
                     .join('tracks', 'liked_tracks.track_id', 'tracks.id')
-                    .where({'liked_tracks.user_id': user.id})
+                    .where({ 'liked_tracks.user_id': user.id })
                     .select('tracks.track_id')
             ).map(record => record.track_id)
         );
@@ -172,7 +172,7 @@ class Spotify {
         const allNewTracks: SpotifyApi.SavedTrackObject[] = [];
 
         while (offset < total) {
-            const options: PaginationOptions = {limit: 50, offset};
+            const options: PaginationOptions = { limit: 50, offset };
             const limit = options.limit ?? 50;
             const savedTracksResponse = await this.getSavedTracks(userId, options);
             total = savedTracksResponse.total;
@@ -188,51 +188,48 @@ class Spotify {
             }
 
             if (unsavedTracks.length > 0) {
-                console.log(`Found ${unsavedTracks.length} new tracks.`);
+                log(`Found ${unsavedTracks.length} new tracks.`);
                 allNewTracks.push(...unsavedTracks);
             }
 
             if (firstDuplicateFound) {
-                console.log(`First duplicate found. Updating offset to database count and inserting new tracks.`);
+                log(`First duplicate found. Updating offset to database count and inserting new tracks.`);
                 break;
             }
 
             offset += limit;
         }
 
-        // Insert all newly found tracks before skipping ahead
         if (allNewTracks.length > 0) {
-            console.log(`Inserting ${allNewTracks.length} new tracks into the database...`);
+            log(`Inserting ${allNewTracks.length} new tracks into the database...`);
             await this.insertSavedTracks(userId, allNewTracks);
         }
 
         // Update offset to database count after inserting new tracks
         const updatedCountResult = await db('liked_tracks')
-            .where({user_id: user.id})
+            .where({ user_id: user.id })
             .count('* as count')
             .first();
         savedTracksCount = Number(updatedCountResult?.count ?? savedTracksCount);
         offset = savedTracksCount;
-        console.log(`Continuing from offset: ${offset}`);
+        log(`Continuing from offset: ${offset}`);
 
-        // Continue from the saved offset after processing newly added songs
         while (offset < total) {
-            const options: PaginationOptions = {limit: 50, offset};
+            const options: PaginationOptions = { limit: 50, offset };
             const limit = options.limit ?? 50;
             const savedTracksResponse = await this.getSavedTracks(userId, options);
             await this.insertSavedTracks(userId, savedTracksResponse.items);
             total = savedTracksResponse.total;
 
-            console.log(`Processed ${Math.min(offset + limit, total)} out of ${total} tracks from Spotify.`);
+            log(`Processed ${Math.min(offset + limit, total)} out of ${total} tracks from Spotify.`);
             offset += limit;
         }
 
         if (offset === total) {
-            console.log('No new tracks found.');
+            log('No new tracks found.');
         }
-
-        return [];
     }
+
 
 
     async insertSavedTracks(userId: string, savedTracks: SpotifyApi.SavedTrackObject[]): Promise<void> {
