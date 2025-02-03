@@ -1,5 +1,9 @@
+/* jshint esversion: 9 */
+/* jshint node: true */
+import gts from "gts/.prettierrc.json";
+
 module.exports = {
-    ...require("gts/.prettierrc.json"),
+    ...(gts),
     semi: true,
     bracketSpacing: true,
     singleQuote: true,

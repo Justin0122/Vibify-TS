@@ -35,3 +35,7 @@ export interface PaginationOptions {
     after?: number;
     before?: number;
 }
+
+export interface log {
+    (message: string, type: string): void;
+}

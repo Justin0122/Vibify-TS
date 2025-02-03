@@ -1,12 +1,19 @@
 import SpotifyWebApi from 'spotify-web-api-node';
 import dotenv from 'dotenv';
 import chalk from 'chalk';
-import {setSpotifyTokens, getSpotifyTokens, tokenHandler, refreshAccessToken} from './Tokens';
+import {getSpotifyTokens, refreshAccessToken, setSpotifyTokens, tokenHandler} from './Tokens';
 import {authorizationCodeGrant} from './Authorization';
 import {getSpotifyUser} from './User';
-import {getSpotifyPlaylists, getSpotifyPlaylist} from './Playlist';
-import {deleteUserFromDatabase} from '@/services/Database';
-import {PaginationOptions, RecommendationsOptions} from '@/types/spotify';
+import {getSpotifyPlaylist, getSpotifyPlaylists} from './Playlist';
+import {
+    deleteUserFromDatabase,
+    insertArtist,
+    insertArtistGenre,
+    insertGenre,
+    insertLikedTrack,
+    insertTrack
+} from '@/services/Database';
+import {log, PaginationOptions, RecommendationsOptions} from '@/types/spotify';
 import {buildApiOptions, gatherSeeds, getAudioFeaturesValues, setTargetValues} from "@/services/Recommendations";
 import db from '@/db/database';
 
@@ -84,16 +91,33 @@ class Spotify {
         }
     }
 
-    async getTopArtists(userId: string, options: PaginationOptions): Promise<SpotifyApi.UsersTopArtistsResponse> {
+    async getTopArtists(userId: string, options: PaginationOptions, log: log | null = null, logImages = false): Promise<SpotifyApi.UsersTopArtistsResponse> {
         return this.handler(userId, async () => {
             const topArtists = await this.spotifyApi.getMyTopArtists(options);
+            if (log) {
+                for (const artist of topArtists.body.items) {
+                    await log(`Artist: ${artist.name}`, 'info');
+                    if (artist.images.length > 0 && logImages) {
+                        await log(artist.images[0].url, 'image');
+                    }
+                }
+            }
             return topArtists.body;
         });
     }
 
-    async getTopTracks(userId: string, options: PaginationOptions): Promise<SpotifyApi.UsersTopTracksResponse> {
+
+    async getTopTracks(userId: string, options: PaginationOptions, log: log | null = null, logImages = false): Promise<SpotifyApi.UsersTopTracksResponse> {
         return this.handler(userId, async () => {
             const topTracks = await this.spotifyApi.getMyTopTracks(options);
+            if (log) {
+                for (const track of topTracks.body.items) {
+                    await log(`Track: ${track.name} by ${track.artists[0].name}`, 'info');
+                    if (track.album.images.length > 0 && logImages) {
+                        await log(track.album.images[0].url, 'image');
+                    }
+                }
+            }
             return topTracks.body;
         });
     }
@@ -105,16 +129,57 @@ class Spotify {
         });
     }
 
-    async getRecentlyPlayedTracks(userId: string, options: PaginationOptions): Promise<SpotifyApi.UsersRecentlyPlayedTracksResponse> {
+    async getRecentlyPlayedTracks(userId: string, options: PaginationOptions, log: log | null = null, logImages = false): Promise<SpotifyApi.UsersRecentlyPlayedTracksResponse> {
         return this.handler(userId, async () => {
             const recentlyPlayedTracks = await this.spotifyApi.getMyRecentlyPlayedTracks(options);
+            if (log) {
+                for (const track of recentlyPlayedTracks.body.items) {
+                    await log(`Track: ${track.track.name} by ${track.track.artists[0].name}`, 'info');
+                    if (track.track.album.images.length > 0 && logImages) {
+                        await log(track.track.album.images[0].url, 'image');
+                    }
+                }
+            }
             return recentlyPlayedTracks.body;
         });
     }
 
-    async getCurrentPlayback(userId: string): Promise<SpotifyApi.CurrentlyPlayingResponse> {
+    async getCurrentPlayback(userId: string, log: log | null = null): Promise<SpotifyApi.CurrentlyPlayingResponse> {
         return this.handler(userId, async () => {
             const currentPlayback = await this.spotifyApi.getMyCurrentPlayingTrack();
+            if (!currentPlayback.body) {
+                return currentPlayback.body;
+            }
+            if (log) {
+                // make sure it is a track and not an episode
+                if (currentPlayback.body.currently_playing_type === 'track' && currentPlayback.body.item && 'artists' in currentPlayback.body.item && 'album' in currentPlayback.body.item) {
+                    log(`Currently playing: ${currentPlayback.body.item.name} by ${currentPlayback.body.item.artists[0].name}`, 'info');
+                    if (currentPlayback.body.item.album.images.length > 0) {
+                        await log(currentPlayback.body.item.album.images[0].url, 'image');
+                    }
+                    if (currentPlayback.body.is_playing) {
+                        // display the time progress of the track
+                        const duration = currentPlayback.body.item.duration_ms;
+                        const progress = currentPlayback.body.progress_ms;
+                        if (progress != null && duration != null) {
+                            const progressSeconds = Math.floor(progress / 1000);
+                            const durationSeconds = Math.floor(duration / 1000);
+                            const percentage = (progress / duration) * 100;
+                            const progressBarLength = 50;
+                            const progressBarFilledLength = Math.floor((progressBarLength * percentage) / 100);
+                            const progressBarEmptyLength = progressBarLength - progressBarFilledLength;
+                            const progressText = `${progressSeconds}s / ${durationSeconds}s`;
+                            const progressTextPosition = Math.floor(progressBarLength / 2) - Math.floor(progressText.length / 2);
+
+                            const progressBar = chalk.green('█'.repeat(progressBarFilledLength)) + chalk.white('█'.repeat(progressBarEmptyLength));
+                            const centeredProgressText = ' '.repeat(progressTextPosition) + progressText;
+
+                            log(centeredProgressText, 'info');
+                            log(`${progressBar} ${Math.floor(percentage)}%`, 'info');
+                        }
+                    }
+                }
+            }
             return currentPlayback.body;
         });
     }
@@ -135,184 +200,237 @@ class Spotify {
         });
     }
 
-    async saveLikedTracks(userId: string, log: (message: string) => void): Promise<void> {
-        const user = await db('users')
-            .where({ user_id: userId })
-            .select('id')
-            .first();
+    async getUserFromDb(userId: string): Promise<{ id: number }> {
+        const user = await db('users').where({user_id: userId}).select('id').first();
+        if (!user) throw new Error(`User with ID ${userId} not found`);
+        return user;
+    }
 
-        if (!user) {
-            throw new Error(`User with ID ${userId} not found`);
-        }
-
-        // Get count of liked tracks already saved
+    async getDbLikedTracksCount(userDbId: number): Promise<number> {
         const countResult = await db('liked_tracks')
-            .where({ user_id: user.id })
-            .count('* as count')
+            .where({user_id: userDbId})
+            .count({count: '*'})
             .first();
-        let savedTracksCount = Number(countResult?.count ?? 0);
+        return Number(countResult?.count ?? 0);
+    }
 
-        log(`Starting offset set to ${savedTracksCount} based on already saved tracks.`);
+    async deleteMissingTracks(user: string, total: number, userId: number, log: log): Promise<void> {
+        log('Checking for missing tracks (batch‑wise) and removing them from the database...', 'warning');
 
-        // Fetch the actual total count from Spotify
-        const initialTracksResponse = await this.getSavedTracks(userId, { limit: 1, offset: 0 });
-        let total = initialTracksResponse.total;
-        log(`Spotify reports ${total} total liked tracks.`);
+        const dbLikedTracksCount = await this.getDbLikedTracksCount(userId);
+        const totalDislikedTracks = dbLikedTracksCount - total;
 
-        if (total === countResult?.count) {
-            log('No new tracks found.');
+        let offset = 0;
+        while (offset < total) {
+            const spotifyResponse = await this.getSavedTracks(user, {limit: 50, offset});
+            const spotifyBatch = spotifyResponse.items;
+
+            const dbBatch = await db('liked_tracks')
+                .join('tracks', 'liked_tracks.track_id', 'tracks.id')
+                .where({'liked_tracks.user_id': userId})
+                .select('tracks.track_id', 'tracks.id', 'tracks.name')
+                .orderBy('liked_tracks.added_at', 'desc')
+                .limit(50)
+                .offset(offset);
+
+            for (let i = 0; i < spotifyBatch.length; i++) {
+                const spotifyTrack = spotifyBatch[i].track;
+                const dbTrack = dbBatch[i];
+
+                if (!dbTrack || dbTrack.track_id !== spotifyTrack.id) {
+                    if (dbTrack) {
+                        log(`Detected missing track: ${dbTrack.name}. Deleting from database...`, 'warning');
+                        await db('liked_tracks')
+                            .where({user_id: userId})
+                            .andWhere('track_id', dbTrack.id)
+                            .del();
+                        await db('tracks')
+                            .where({id: dbTrack.id})
+                            .del();
+                        log(`Deleted track: ${dbTrack.name}`, 'info');
+                    } else {
+                        log(`Discrepancy found at batch index ${i}, but no matching DB record.`, 'warning');
+                    }
+                    break;
+                }
+
+                if (dbLikedTracksCount - i === totalDislikedTracks) {
+                    log('All missing tracks have been removed.', 'update-success');
+                    return;
+                }
+            }
+            offset += 50;
+        }
+    }
+
+
+    async saveLikedTracks(userId: string, log: log): Promise<void> {
+        return this.handler(userId, async () => {
+            const user = await this.getUserFromDb(userId);
+            await this.removeDuplicateLikedTracks(user.id, log);
+            const savedTracksCount = await this.getDbLikedTracksCount(user.id);
+            log(`Starting offset set to ${savedTracksCount} based on already saved tracks.`, 'info');
+
+            const {total} = await this.getSavedTracks(userId, {limit: 50, offset: 0});
+            log(`Spotify reports ${total} total liked tracks.`, 'info');
+
+            if (total < savedTracksCount) {
+                await this.deleteMissingTracks(userId, total, user.id, log);
+            } else if (total === savedTracksCount) {
+                log('No new tracks found.', 'warning');
+                return;
+            }
+
+            const firstDuplicateFound = await this.insertNewTracksFromOffset(userId, total, log);
+            if (!firstDuplicateFound) {
+                await this.continueProcessingTracks(user, userId, log);
+            }
+
+            if (await this.getDbLikedTracksCount(user.id) > total) {
+                await this.removeDuplicateLikedTracks(user.id, log);
+            }
+        });
+    }
+
+    async removeDuplicateLikedTracks(userDbId: number, log: log): Promise<void> {
+        const duplicates = await db('liked_tracks')
+            .select('track_id')
+            .count('* as count')
+            .where({user_id: userDbId})
+            .groupBy('track_id')
+            .havingRaw('COUNT(*) > 1');
+
+        if (duplicates.length === 0) {
             return;
         }
 
+        for (const dup of duplicates) {
+            const records = await db('liked_tracks')
+                .where({user_id: userDbId, track_id: dup.track_id})
+                .orderBy('added_at', 'asc');
+
+            const duplicateRecords = records.slice(1);
+            if (duplicateRecords.length) {
+                const idsToDelete = duplicateRecords.map(record => record.id);
+                await db('liked_tracks')
+                    .whereIn('id', idsToDelete)
+                    .del();
+
+                log(
+                    `Removed duplicate entries for track ID ${dup.track_id} (deleted ${duplicateRecords.length} records).`,
+                    'info'
+                );
+            }
+        }
+    }
+
+    async insertNewTracksFromOffset(userId: string, total: number, log: log): Promise<boolean> {
         const savedTrackIds = new Set(
             (await db('liked_tracks')
                     .join('tracks', 'liked_tracks.track_id', 'tracks.id')
-                    .where({ 'liked_tracks.user_id': user.id })
+                    .where({'liked_tracks.user_id': (await this.getUserFromDb(userId)).id})
                     .select('tracks.track_id')
             ).map(record => record.track_id)
         );
 
         let offset = 0;
         let firstDuplicateFound = false;
-        const allNewTracks: SpotifyApi.SavedTrackObject[] = [];
-
         while (offset < total) {
-            const options: PaginationOptions = { limit: 50, offset };
-            const limit = options.limit ?? 50;
-            const savedTracksResponse = await this.getSavedTracks(userId, options);
-            total = savedTracksResponse.total;
+            const options: PaginationOptions = {limit: 50, offset};
+            const spotifyResponse = await this.getSavedTracks(userId, options);
+            const currentTotal = spotifyResponse.total;
 
             const unsavedTracks: SpotifyApi.SavedTrackObject[] = [];
-
-            for (const track of savedTracksResponse.items) {
-                if (savedTrackIds.has(track.track.id)) {
+            for (const item of spotifyResponse.items) {
+                const spotifyTrackId = item.track.id;
+                if (savedTrackIds.has(spotifyTrackId)) {
                     firstDuplicateFound = true;
+                    log(`Duplicate found for track ID ${spotifyTrackId}, stopping batch insertion.`, 'success');
+                    const dbLikedTracksCount = await this.getDbLikedTracksCount((await this.getUserFromDb(userId)).id);
+                    if (dbLikedTracksCount < currentTotal) {
+                        log('Continuing to process the rest of the tracks...', 'info');
+                        await this.continueProcessingTracks(await this.getUserFromDb(userId), userId, log);
+                    }
                     break;
                 }
-                unsavedTracks.push(track);
+                unsavedTracks.push(item);
             }
 
             if (unsavedTracks.length > 0) {
-                log(`Found ${unsavedTracks.length} new tracks.`);
-                allNewTracks.push(...unsavedTracks);
+                log(`Inserting ${unsavedTracks.length} new tracks into the database...`, 'info');
+                await this.insertSavedTracks(userId, unsavedTracks);
+                unsavedTracks.forEach(item => savedTrackIds.add(item.track.id));
             }
 
             if (firstDuplicateFound) {
-                log(`First duplicate found. Updating offset to database count and inserting new tracks.`);
-                break;
+                return true;
             }
-
-            offset += limit;
+            offset += options.limit ?? 50;
+            if (offset >= currentTotal) break;
         }
+        return false;
+    }
 
-        if (allNewTracks.length > 0) {
-            log(`Inserting ${allNewTracks.length} new tracks into the database...`);
-            await this.insertSavedTracks(userId, allNewTracks);
+    async continueProcessingTracks(user: { id: number }, userId: string, log: log): Promise<void> {
+        let offset = await this.getDbLikedTracksCount(user.id);
+        const initialResponse = await this.getSavedTracks(userId, {limit: 50, offset: 0});
+        const total = initialResponse.total;
+
+        if (offset === total) {
+            log('All tracks processed.', 'update-success');
+            return;
         }
-
-        // Update offset to database count after inserting new tracks
-        const updatedCountResult = await db('liked_tracks')
-            .where({ user_id: user.id })
-            .count('* as count')
-            .first();
-        savedTracksCount = Number(updatedCountResult?.count ?? savedTracksCount);
-        offset = savedTracksCount;
-        log(`Continuing from offset: ${offset}`);
+        log(`Continuing from offset: ${offset}`, 'success');
 
         while (offset < total) {
-            const options: PaginationOptions = { limit: 50, offset };
-            const limit = options.limit ?? 50;
-            const savedTracksResponse = await this.getSavedTracks(userId, options);
-            await this.insertSavedTracks(userId, savedTracksResponse.items);
-            total = savedTracksResponse.total;
-
-            log(`Processed ${Math.min(offset + limit, total)} out of ${total} tracks from Spotify.`);
-            offset += limit;
+            const options: PaginationOptions = {limit: 50, offset};
+            const response = await this.getSavedTracks(userId, options);
+            if (response.items.length) {
+                // Insert tracks without further duplicate-checking here.
+                await this.insertSavedTracks(userId, response.items);
+                log(`Processed ${Math.min(offset + (options.limit ?? 50), total)} out of ${total} tracks from Spotify.`, 'update-success');
+            }
+            offset += options.limit ?? 50;
         }
+        log('All tracks processed.', 'update-success');
     }
 
     async insertSavedTracks(userId: string, savedTracks: SpotifyApi.SavedTrackObject[]): Promise<void> {
-        const artistIds = savedTracks.map(track => track.track.artists[0].id);
-        const uniqueArtistIds = Array.from(new Set(artistIds));
+        return this.handler(userId, async () => {
+            const uniqueArtistIds = Array.from(new Set(savedTracks.map(track => track.track.artists[0].id)));
 
-        // Fetch artist details in batches of 50
-        const artistDetailsList: SpotifyApi.ArtistObjectFull[] = [];
-        for (let i = 0; i < uniqueArtistIds.length; i += 50) {
-            const batch = uniqueArtistIds.slice(i, i + 50);
-            const artistDetailsResponse = await this.spotifyApi.getArtists(batch);
-            artistDetailsList.push(...artistDetailsResponse.body.artists);
-        }
-
-        const artistDetailsMap = new Map(artistDetailsList.map(artist => [artist.id, artist]));
-
-        // Get the integer user ID from the database
-        const userRecord = await db('users').where({user_id: userId}).select('id').first();
-        if (!userRecord) {
-            throw new Error(`User with ID ${userId} not found`);
-        }
-        const userIntId = userRecord.id;
-
-        for (const track of savedTracks) {
-            const artist = track.track.artists[0];
-            const artistDetails = artistDetailsMap.get(artist.id);
-            const genres = artistDetails ? artistDetails.genres : [];
-
-            // Insert artist if not exists
-            await db('artists')
-                .insert({artist_id: artist.id, name: artist.name})
-                .onConflict('artist_id')
-                .ignore();
-
-            // Insert genres and artist-genre relationships
-            for (const genre of genres) {
-                await db('genres')
-                    .insert({genre})
-                    .onConflict('genre')
-                    .ignore();
-
-                const genreId = await db('genres')
-                    .where({genre})
-                    .select('id')
-                    .first();
-
-                const artistId = await db('artists')
-                    .where({artist_id: artist.id})
-                    .select('id')
-                    .first();
-
-                await db('artist_genres')
-                    .insert({
-                        artist_id: artistId.id,
-                        genre_id: genreId.id
-                    })
-                    .onConflict(['artist_id', 'genre_id'])
-                    .ignore();
+            const artistDetailsList: SpotifyApi.ArtistObjectFull[] = [];
+            for (let i = 0; i < uniqueArtistIds.length; i += 50) {
+                const batch = uniqueArtistIds.slice(i, i + 50);
+                const {body: {artists}} = await this.spotifyApi.getArtists(batch);
+                artistDetailsList.push(...artists);
             }
 
-            // Insert track
-            await db('tracks')
-                .insert({
-                    track_id: track.track.id,
-                    name: track.track.name,
-                    artist_id: (await db('artists').where({artist_id: artist.id}).select('id').first()).id
-                })
-                .onConflict('track_id')
-                .ignore();
+            const artistDetailsMap = new Map(artistDetailsList.map(artist => [artist.id, artist]));
+            const userRecord = await db('users').where({user_id: userId}).select('id').first();
+            if (!userRecord) throw new Error(`User with ID ${userId} not found`);
+            const userIntId = userRecord.id;
 
-            const trackId = await db('tracks')
-                .where({track_id: track.track.id})
-                .select('id')
-                .first();
+            for (const track of savedTracks) {
+                const artist = track.track.artists[0];
+                const artistDetails = artistDetailsMap.get(artist.id);
+                const genres = artistDetails?.genres || [];
 
-            // Insert liked track
-            await db('liked_tracks').insert({
-                user_id: userIntId, // Use the integer user ID
-                track_id: trackId.id,
-                added_at: track.added_at,
-                year: new Date(track.added_at).getFullYear(),
-                month: new Date(track.added_at).getMonth() + 1
-            });
-        }
+                await insertArtist(artist.id, artist.name);
+
+                for (const genre of genres) {
+                    await insertGenre(genre);
+                    const genreId = (await db('genres').where({genre}).select('id').first()).id;
+                    const artistId = (await db('artists').where({artist_id: artist.id}).select('id').first()).id;
+                    await insertArtistGenre(artistId, genreId);
+                }
+
+                const artistId = (await db('artists').where({artist_id: artist.id}).select('id').first()).id;
+                await insertTrack(track.track.id, track.track.name, artistId);
+                const trackId = (await db('tracks').where({track_id: track.track.id}).select('id').first()).id;
+                await insertLikedTrack(userIntId, trackId, track.added_at);
+            }
+        });
     }
 }
 

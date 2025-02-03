@@ -71,11 +71,11 @@ export async function gatherSeeds(this: Spotify, userId: string, options: Recomm
         seeds.push(...topTracks.items.map(track => ({type: 'track', value: track.id})));
     }
     if (options.topArtists?.use) {
-        const topArtists = await this.getTopArtists(userId, {limit: options.topArtists.amount || 5});
+        const topArtists = await this.getTopArtists(userId, {limit: options.topArtists.amount || 50});
         seeds.push(...topArtists.items.map(artist => ({type: 'artist', value: artist.id})));
     }
     if (options.currentlyPlaying) {
-        const currentPlayback = await this.getCurrentPlayback(userId);
+        const currentPlayback = await this.getCurrentPlayback(userId, () => {});
         if (currentPlayback && currentPlayback.item) {
             seeds.push({type: 'track', value: currentPlayback.item.id});
         }
