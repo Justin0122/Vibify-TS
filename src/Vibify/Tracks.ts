@@ -15,7 +15,7 @@ class Tracks {
     async getTopTracks(userId: string, options: PaginationOptions, log: log | null = null, logImages = false): Promise<SpotifyApi.UsersTopTracksResponse> {
         return this.spotify.handler(userId, async () => {
             const topTracks = await this.spotify.spotifyApi.getMyTopTracks(options);
-            await this.logTracks(topTracks.body.items, log, logImages);
+            if (log) await this.logTracks(topTracks.body.items, log, logImages);
             return topTracks.body;
         });
     }
@@ -27,7 +27,7 @@ class Tracks {
     async getRecentlyPlayedTracks(userId: string, options: PaginationOptions, log: log | null = null, logImages = false): Promise<SpotifyApi.UsersRecentlyPlayedTracksResponse> {
         return this.spotify.handler(userId, async () => {
             const recentlyPlayedTracks = await this.spotify.spotifyApi.getMyRecentlyPlayedTracks(options);
-            await this.logTracks(recentlyPlayedTracks.body.items.map(item => item.track), log, logImages);
+            if (log) await this.logTracks(recentlyPlayedTracks.body.items.map(item => item.track), log, logImages);
             return recentlyPlayedTracks.body;
         });
     }
@@ -47,12 +47,10 @@ class Tracks {
         });
     }
 
-    private async logTracks(tracks: SpotifyApi.TrackObjectFull[], log: log | null, logImages: boolean): Promise<void> {
-        if (log) {
-            for (const track of tracks) {
-                await log(`Track: ${track.name} by ${track.artists[0].name}`, 'info');
-                if (track.album.images.length > 0 && logImages) await log(track.album.images[0].url, 'image');
-            }
+    private async logTracks(tracks: SpotifyApi.TrackObjectFull[], log: log, logImages: boolean): Promise<void> {
+        for (const track of tracks) {
+            await log(`Track: ${track.name} by ${track.artists[0].name}`, 'info');
+            if (track.album.images.length > 0 && logImages) await log(track.album.images[0].url, 'image');
         }
     }
 
@@ -109,103 +107,33 @@ class Tracks {
 
     async saveLikedTracks(userId: string, log: log): Promise<void> {
         return this.spotify.handler(userId, async () => {
-            const user = await this.spotify.user.getFromDb(userId);
-            const savedTracksCount = await this.LikedCount(user.id);
-            log(`Starting offset set to ${savedTracksCount} based on already saved tracks.`, 'info');
-
-            const {total} = await this.getSavedTracks(userId, {limit: 50, offset: 0});
+            let limit = 50;
+            const spotifyResponse = await this.getSavedTracks(userId, {limit: 1, offset: 0});
+            const total = spotifyResponse.total;
+            let totalFromDb = await this.LikedCount((await this.spotify.user.getFromDb(userId)).id);
             log(`Spotify reports ${total} total liked tracks.`, 'info');
 
-            if (total === savedTracksCount) {
-                log('No new tracks found.', 'warning');
+            let offset = total - totalFromDb - 50;
+            if (offset < 0) {
+                offset = 0;
+                limit = total - totalFromDb;
+            }
+            if (limit <= 0) {
+                log('All tracks are already in the database.', 'success');
                 return;
             }
 
-            const firstDuplicateFound = await this.insertNewTracksFromOffset(userId, total, log);
-            if (firstDuplicateFound) return;
-        });
-    }
+            while (totalFromDb < total) {
+                const spotifyResponse = await this.getSavedTracks(userId, {limit: limit, offset});
 
-    private async insertNewTracksFromOffset(userId: string, total: number, log: log): Promise<boolean> {
-        const savedTrackIds = await this.getSavedTrackIds(userId);
-        let offset = 0;
-        let firstDuplicateFound = false;
-
-        while (offset < total) {
-            const spotifyResponse = await this.getSavedTracks(userId, {limit: 50, offset});
-            const currentTotal = spotifyResponse.total;
-
-            const unsavedTracks = this.getUnsavedTracks(spotifyResponse.items, savedTrackIds, log);
-            if (unsavedTracks.firstDuplicateFound) {
-                firstDuplicateFound = true;
-                const dbLikedTracksCount = await this.LikedCount((await this.spotify.user.getFromDb(userId)).id);
-                if (dbLikedTracksCount < currentTotal) {
-                    log('Continuing to process the rest of the tracks...', 'info');
-                    await this.continueProcessingTracks(await this.spotify.user.getFromDb(userId), userId, log);
+                if (spotifyResponse.items.length > 0) {
+                    log(`Inserting ${spotifyResponse.items.length} new tracks into the database...`, 'info');
+                    await this.insertSavedTracks(userId, spotifyResponse.items);
+                    totalFromDb += spotifyResponse.items.length;
                 }
-                break;
+                offset -= 50;
             }
-
-            if (unsavedTracks.tracks.length > 0) {
-                log(`Inserting ${unsavedTracks.tracks.length} new tracks into the database...`, 'info');
-                await this.insertSavedTracks(userId, unsavedTracks.tracks);
-                unsavedTracks.tracks.forEach(item => savedTrackIds.add(item.track.id));
-            }
-
-            if (firstDuplicateFound) return true;
-            offset += 50;
-            if (offset >= currentTotal) break;
-        }
-        return false;
-    }
-
-    private async getSavedTrackIds(userId: string): Promise<Set<string>> {
-        const userDbId = (await this.spotify.user.getFromDb(userId)).id;
-        const savedTracks = await db('liked_tracks').join('tracks', 'liked_tracks.track_id', 'tracks.id').where({'liked_tracks.user_id': userDbId}).select('tracks.track_id');
-        return new Set(savedTracks.map(record => record.track_id));
-    }
-
-    private getUnsavedTracks(items: SpotifyApi.SavedTrackObject[], savedTrackIds: Set<string>, log: log): {
-        tracks: SpotifyApi.SavedTrackObject[],
-        firstDuplicateFound: boolean
-    } {
-        const unsavedTracks: SpotifyApi.SavedTrackObject[] = [];
-        let firstDuplicateFound = false;
-
-        for (const item of items) {
-            const spotifyTrackId = item.track.id;
-            if (savedTrackIds.has(spotifyTrackId)) {
-                firstDuplicateFound = true;
-                log(`Duplicate found for track ID ${spotifyTrackId}, stopping batch insertion.`, 'success');
-                break;
-            }
-            unsavedTracks.push(item);
-        }
-
-        return {tracks: unsavedTracks, firstDuplicateFound};
-    }
-
-    private async continueProcessingTracks(user: { id: number }, userId: string, log: log): Promise<void> {
-        let offset = await this.LikedCount(user.id);
-        const initialResponse = await this.getSavedTracks(userId, {limit: 50, offset: 0});
-        const total = initialResponse.total;
-
-        if (offset === total) {
-            log('All tracks processed.', 'update-success');
-            return;
-        }
-        log(`Continuing from offset: ${offset}`, 'success');
-
-        while (offset < total) {
-            const options: PaginationOptions = {limit: 50, offset};
-            const response = await this.getSavedTracks(userId, options);
-            if (response.items.length) {
-                await this.insertSavedTracks(userId, response.items);
-                log(`Processed ${Math.min(offset + (options.limit ?? 50), total)} out of ${total} tracks from Spotify.`, 'update-success');
-            }
-            offset += options.limit ?? 50;
-        }
-        log('All tracks processed.', 'update-success');
+        });
     }
 }
 
