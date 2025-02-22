@@ -1,8 +1,8 @@
 import express, {Request, Response, NextFunction} from 'express';
-import Spotify from '@/services/Spotify';
+import Spotify from '@/Vibify/Spotify';
 import authenticateApiKey from '@/middlewares/authenticateApiKey';
 import catchErrors from '@/middlewares/catchErrors';
-import {log, PaginationOptions, RecommendationsOptions, SpotifyAuthorizationResponse} from '@/types/spotify';
+import {log, PaginationOptions, SpotifyAuthorizationResponse} from '@/types/spotify';
 import sseLoggingMiddleware from '@/middlewares/sseLogging';
 
 const router = express.Router();
@@ -29,142 +29,73 @@ router.get('/callback', catchErrors(async (req: Request, res: Response) => {
     }
 }));
 
-const optionalSSE = (req: Request, res: Response, next: NextFunction) => {
-    if (req.query.sse === 'true') {
-        sseLoggingMiddleware(req, res, next);
-    } else {
-        next();
-    }
+const setOptions = (req: RequestWithLog, _res: Response, next: NextFunction) => {
+    req.paginationOptions = {
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
+        offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
+        after: req.query.after ? parseInt(req.query.after as string) : undefined,
+        before: req.query.before ? parseInt(req.query.before as string) : undefined,
+    };
+    if (req.query.sse === 'true') sseLoggingMiddleware(req, _res, next);
+    else next();
 };
 
 interface RequestWithLog extends Request {
     log?: log;
+    paginationOptions?: PaginationOptions;
 }
 
-router.get('/save-liked-tracks/:id', authenticateApiKey, optionalSSE, catchErrors(async (req: RequestWithLog, res: Response) => {
-    const useSSE = req.query.sse === 'true';
-    const log = useSSE && req.log ? req.log.bind(req) : () => {
-    };
-    if (useSSE) log?.('Starting to process liked tracks...', 'start');
-
-    try {
-        const result = await spotify.saveLikedTracks(req.params.id, log as log);
-        if (useSSE) {
-            log?.('✅ Finished processing liked tracks!', 'update-start');
-            res.end();
-        } else {
-            res.status(200).json(result);
+const handleRoute = (handler: (req: RequestWithLog, res: Response, log: log) => Promise<unknown>) =>
+    catchErrors(async (req: RequestWithLog, res: Response) => {
+        const useSSE = req.query.sse === 'true';
+        const log = useSSE && req.log ? req.log.bind(req) : () => {
+        };
+        try {
+            const result = await handler(req, res, log);
+            if (useSSE) res.end();
+            else res.status(200).json(result);
+        } catch (error) {
+            if (useSSE) {
+                log(`Error: ${(error as Error).message}`, 'error');
+                res.end();
+            } else {
+                res.status(500).json({error: (error as Error).message});
+            }
         }
-    } catch (error) {
-        if (useSSE) {
-            log?.(`Error: ${(error as Error).message}`, 'error');
-            res.end();
-        } else {
-            res.status(500).json({error: (error as Error).message});
-        }
-    }
+    });
+
+router.get('/save-liked-tracks/:id', authenticateApiKey, setOptions, handleRoute(async (req, _res, log) => {
+    return await spotify.tracks.saveLikedTracks(req.params.id, log);
 }));
 
-router.get('/user/:id', authenticateApiKey, optionalSSE, catchErrors(async (req: RequestWithLog, res: Response) => {
-    const useSSE = req.query.sse === 'true';
-    const log = useSSE && req.log ? req.log.bind(req) : () => {
-    };
-    const user = await spotify.getSpotifyUser(req.params.id, log as log);
-    if (useSSE && user) res.end();
-    else res.status(200).json(user);
+router.get('/user/:id', authenticateApiKey, setOptions, handleRoute(async (req, _res, log) => {
+    return await spotify.user.getSpotifyUser(req.params.id, log);
 }));
 
-router.get('/playlists/:id', authenticateApiKey, optionalSSE, catchErrors(async (req: RequestWithLog, res: Response) => {
-    const options: PaginationOptions = {
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
-        offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
-    };
+const handlePaginationRoute = (handler: (req: RequestWithLog, res: Response, log: log, logImages: boolean) => Promise<unknown>) =>
+    handleRoute(async (req: RequestWithLog, res: Response, log: log) => {
+        const logImages = req.query.logimages !== undefined;
+        return await handler(req, res, log, logImages);
+    });
 
-    const playlists = await spotify.getSpotifyPlaylists(req.params.id, options);
-
-    if (!req.query.sse) res.status(200).json(playlists);
+router.get('/playlists/:id', authenticateApiKey, setOptions, handleRoute(async (req: RequestWithLog) => {
+    return await spotify.getSpotifyPlaylists(req.params.id, req.paginationOptions!);
 }));
 
-/**
- * @deprecated As of November 27, 2024, Spotify has removed the Recommendations feature from their Web API.
- * This endpoint will no longer function but is kept here for if the feature is ever re-added.
- * For more information, please refer to the official Spotify Developer Blog:
- * @see https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api
- */
-router.get('/recommendations/:id', authenticateApiKey, catchErrors(async (req: Request, res: Response) => {
-    res.status(501).json({error: 'This feature has been deprecated by Spotify'});
-    const options: RecommendationsOptions = {
-        seedArtists: req.query.seed_artists ? (req.query.seed_artists as string).split(',') : [],
-        seedGenres: req.query.seed_genres ? (req.query.seed_genres as string).split(',') : [],
-        seedTracks: req.query.seed_tracks ? (req.query.seed_tracks as string).split(',') : [],
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
-        market: req.query.market as string,
-        likedTracks: req.query.likedTracks ? JSON.parse(req.query.likedTracks as string) : undefined,
-        recentTracks: req.query.recentTracks ? JSON.parse(req.query.recentTracks as string) : undefined,
-        topTracks: req.query.topTracks ? JSON.parse(req.query.topTracks as string) : undefined,
-        topArtists: req.query.topArtists ? JSON.parse(req.query.topArtists as string) : undefined,
-        currentlyPlaying: req.query.currentlyPlaying ? JSON.parse(req.query.currentlyPlaying as string) : undefined,
-    };
-
-    const recommendations = await spotify.getRecommendations(req.params.id, options);
-    res.status(200).json(recommendations);
+router.get('/top/artists/:id', authenticateApiKey, setOptions, handlePaginationRoute(async (req: RequestWithLog, _res: Response, log: log, logImages: boolean) => {
+    return await spotify.artist.getTopArtists(req.params.id, req.paginationOptions!, log, logImages);
 }));
 
-
-router.get('/top/artists/:id', authenticateApiKey, optionalSSE, catchErrors(async (req: RequestWithLog, res: Response) => {
-    const useSSE = req.query.sse === 'true';
-    const options: PaginationOptions = {
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
-        offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
-    };
-    let logFunction;
-    if (useSSE) logFunction = req.log?.bind(req);
-    const logImages = req.query.logimages !== undefined;
-
-    const artists = await spotify.getTopArtists(req.params.id, options, logFunction as log | null, logImages);
-    if (!useSSE) res.status(200).json(artists);
-    else res.end();
+router.get('/top/tracks/:id', authenticateApiKey, setOptions, handlePaginationRoute(async (req: RequestWithLog, _res: Response, log: log, logImages: boolean) => {
+    return await spotify.tracks.getTopTracks(req.params.id, req.paginationOptions!, log, logImages);
 }));
 
-
-
-router.get('/top/tracks/:id', authenticateApiKey, optionalSSE, catchErrors(async (req: RequestWithLog, res: Response) => {
-    const useSSE = req.query.sse === 'true';
-    const options: PaginationOptions = {
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
-        offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
-    };
-    let logFunction;
-    if (useSSE) logFunction = req.log?.bind(req);
-    const logImages = req.query.logimages !== undefined;
-    const tracks = await spotify.getTopTracks(req.params.id, options, logFunction as log | null, logImages);
-    if (useSSE) res.end();
-    else res.status(200).json(tracks);
+router.get('/recently-played/:id', authenticateApiKey, setOptions, handlePaginationRoute(async (req: RequestWithLog, _res: Response, log: log, logImages: boolean) => {
+    return await spotify.tracks.getRecentlyPlayedTracks(req.params.id, req.paginationOptions!, log, logImages);
 }));
 
-router.get('/recently-played/:id', authenticateApiKey, optionalSSE, catchErrors(async (req: RequestWithLog, res: Response) => {
-    const useSSE = req.query.sse === 'true';
-    const options: PaginationOptions = {
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
-        after: req.query.after ? parseInt(req.query.after as string) : undefined,
-        before: req.query.before ? parseInt(req.query.before as string) : undefined,
-    };
-    let logFunction;
-    if (useSSE) logFunction = req.log?.bind(req);
-    const logImages = req.query.logimages !== undefined;
-    const tracks = await spotify.getRecentlyPlayedTracks(req.params.id, options, logFunction as log | null, logImages);
-    if (useSSE) res.end();
-    else res.status(200).json(tracks);
-}));
-
-
-router.get('/currently-playing/:id', authenticateApiKey, optionalSSE, catchErrors(async (req: RequestWithLog, res: Response) => {
-    const useSSE = req.query.sse === 'true';
-    const log = useSSE && req.log ? req.log.bind(req) : () => {
-    };
-    const playback = await spotify.getCurrentPlayback(req.params.id, log as log);
-    if (useSSE) res.end();
-    else res.status(200).json(playback);
+router.get('/currently-playing/:id', authenticateApiKey, setOptions, handleRoute(async (req: RequestWithLog, _res: Response, log: log) => {
+    return await spotify.tracks.getCurrentPlayback(req.params.id, log);
 }));
 
 export default router;

@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import chalk from 'chalk';
 import { SpotifyAuthorizationResponse } from '@/types/spotify';
 import { insertUserIntoDatabase } from './Database';
-import Spotify from "@/services/Spotify";
+import Spotify from "@/Vibify/Spotify";
 
 export async function authorizationCodeGrant(this: Spotify, code: string, id: string): Promise<SpotifyAuthorizationResponse> {
     try {

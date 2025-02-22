@@ -1,8 +1,7 @@
-import SpotifyWebApi from 'spotify-web-api-node';
 import db from '@/db/database';
 import fetch from 'node-fetch';
 import { User } from '@/types/spotify-stored';
-import Spotify from "@/services/Spotify";
+import Spotify from "@/Vibify/Spotify";
 
 export function setSpotifyTokens(this: Spotify, accessToken: string, refreshToken: string): void {
     this.spotifyApi.setAccessToken(accessToken);

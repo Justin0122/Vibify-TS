@@ -1,5 +1,5 @@
 import { PaginationOptions } from '@/types/spotify';
-import Spotify from "@/services/Spotify";
+import Spotify from "@/Vibify/Spotify";
 
 export async function getSpotifyPlaylists(this: Spotify, userId: string, options: PaginationOptions): Promise<SpotifyApi.ListOfCurrentUsersPlaylistsResponse> {
     return this.handler(userId, async () => {
