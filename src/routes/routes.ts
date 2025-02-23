@@ -13,7 +13,14 @@ router.get("/", (_req: Request, res: Response) => {
 });
 
 router.get('/authorize/:userId', catchErrors(async (req: Request, res: Response) => {
-    const url = `https://accounts.spotify.com/authorize?client_id=${process.env.SPOTIFY_CLIENT_ID}&response_type=code&redirect_uri=${process.env.SPOTIFY_REDIRECT_URI}&scope=user-read-email%20user-read-private%20user-library-read%20user-top-read%20user-read-recently-played%20user-read-currently-playing%20user-follow-read%20playlist-read-private%20playlist-modify-public%20playlist-modify-private%20playlist-read-collaborative%20user-library-modify&state=${req.params.userId}`;
+    const {SPOTIFY_CLIENT_ID, SPOTIFY_REDIRECT_URI} = process.env;
+    const scopes = [
+        'user-read-email', 'user-read-private', 'user-library-read', 'user-top-read',
+        'user-read-recently-played', 'user-read-currently-playing', 'user-follow-read',
+        'playlist-read-private', 'playlist-modify-public', 'playlist-modify-private',
+        'playlist-read-collaborative', 'user-library-modify'
+    ].join('%20');
+    const url = `https://accounts.spotify.com/authorize?client_id=${SPOTIFY_CLIENT_ID}&response_type=code&redirect_uri=${SPOTIFY_REDIRECT_URI}&scope=${scopes}&state=${req.params.userId}`;
     res.redirect(url);
 }));
 
@@ -22,7 +29,10 @@ router.get('/callback', catchErrors(async (req: Request, res: Response) => {
     const state = req.query.state as string;
 
     try {
-        const {api_token, userId}: SpotifyAuthorizationResponse = await spotify.authorizationCodeGrant(code, state);
+        const {
+            api_token,
+            userId
+        }: SpotifyAuthorizationResponse = await spotify.user.authorizationCodeGrant(spotify.spotifyApi, code, state);
         res.redirect(`${process.env.REDIRECT_URI}/dashboard?userId=${userId}&api_token=${api_token}`);
     } catch (err) {
         res.status(500).json({error: (err as Error).message});
@@ -78,9 +88,9 @@ const handlePaginationRoute = (handler: (req: RequestWithLog, res: Response, log
         return await handler(req, res, log, logImages);
     });
 
-router.get('/playlists/:id', authenticateApiKey, setOptions, handleRoute(async (req: RequestWithLog) => {
-    return await spotify.getSpotifyPlaylists(req.params.id, req.paginationOptions!);
-}));
+// router.get('/playlists/:id', authenticateApiKey, setOptions, handleRoute(async (req: RequestWithLog) => {
+//     return await spotify.getSpotifyPlaylists(req.params.id, req.paginationOptions!);
+// }));
 
 router.get('/top/artists/:id', authenticateApiKey, setOptions, handlePaginationRoute(async (req: RequestWithLog, _res: Response, log: log, logImages: boolean) => {
     return await spotify.artist.getTopArtists(req.params.id, req.paginationOptions!, log, logImages);

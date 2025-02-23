@@ -1,7 +1,8 @@
-import { PaginationOptions, log } from '@/types/spotify';
 import Spotify from "@/Vibify/Spotify";
+import {log, PaginationOptions} from "@/types/spotify";
+import db from "@/db/database";
 
-class Artist {
+class ArtistService {
     private spotify: Spotify;
 
     constructor(spotify: Spotify) {
@@ -30,6 +31,13 @@ class Artist {
         }
         return new Map(artistDetailsList.map(artist => [artist.id, artist]));
     }
+
+    async insertArtist(artistId: string, name: string) {
+        await db('artists')
+            .insert({artist_id: artistId, name})
+            .onConflict('artist_id')
+            .ignore();
+    }
 }
 
-export default Artist;
+export default ArtistService;

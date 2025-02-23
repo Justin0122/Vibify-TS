@@ -1,11 +1,10 @@
-import {PaginationOptions, log} from '@/types/spotify';
 import Spotify from "@/Vibify/Spotify";
-import chalk from "chalk";
+import {PaginationOptions} from "@/types/spotify";
 import db from "@/db/database";
-import {insertArtist, insertLikedTrack, insertTrack} from "@/Vibify/Database";
-import {processGenre} from "@/Vibify/Genre";
+import chalk from "chalk";
+import {log} from "@/types/spotify";
 
-class Tracks {
+class TrackService {
     private spotify: Spotify;
 
     constructor(spotify: Spotify) {
@@ -32,7 +31,7 @@ class Tracks {
         });
     }
 
-    async LikedCount(userDbId: number): Promise<number> {
+    private async LikedCount(userDbId: number): Promise<number> {
         const countResult = await db('liked_tracks').where({user_id: userDbId}).count({count: '*'}).first();
         return Number(countResult?.count ?? 0);
     }
@@ -84,13 +83,13 @@ class Tracks {
         const artistDetails = artistDetailsMap.get(artist.id);
         const genres = artistDetails?.genres || [];
 
-        await insertArtist(artist.id, artist.name);
-        for (const genre of genres) await processGenre(genre, artist.id);
+        await this.spotify.artist.insertArtist(artist.id, artist.name);
+        for (const genre of genres) await this.spotify.genre.processGenre(genre, artist.id);
 
         const artistId = (await db('artists').where({artist_id: artist.id}).select('id').first()).id;
-        await insertTrack(track.track.id, track.track.name, artistId);
+        await this.insertTrack(track.track.id, track.track.name, artistId);
         const trackId = (await db('tracks').where({track_id: track.track.id}).select('id').first()).id;
-        await insertLikedTrack(userIntId, trackId, track.added_at);
+        await this.insertLikedTrack(userIntId, trackId, track.added_at);
     }
 
     async insertSavedTracks(userId: string, savedTracks: SpotifyApi.SavedTrackObject[]): Promise<void> {
@@ -135,6 +134,23 @@ class Tracks {
             }
         });
     }
+
+    private async insertLikedTrack(userId: number, trackId: number, addedAt: string) {
+        await db('liked_tracks').insert({
+            user_id: userId,
+            track_id: trackId,
+            added_at: addedAt,
+            year: new Date(addedAt).getFullYear(),
+            month: new Date(addedAt).getMonth() + 1
+        });
+    }
+
+    private async insertTrack(trackId: string, name: string, artistId: number) {
+        await db('tracks')
+            .insert({track_id: trackId, name, artist_id: artistId})
+            .onConflict('track_id')
+            .ignore();
+    }
 }
 
-export default Tracks;
+export default TrackService;

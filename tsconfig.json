@@ -43,7 +43,9 @@
       {
         "transform": "typescript-transform-paths"
       }
-    ]
+    ],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
   },
   "include": [
     "src/**/*"

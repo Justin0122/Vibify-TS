@@ -1,14 +1,11 @@
 import SpotifyWebApi from 'spotify-web-api-node';
 import dotenv from 'dotenv';
 import chalk from 'chalk';
-import { getSpotifyTokens, refreshAccessToken, setSpotifyTokens, tokenHandler } from './Tokens';
-import { authorizationCodeGrant } from './Authorization';
-import { getSpotifyPlaylist, getSpotifyPlaylists } from './Playlist';
-import { deleteUserFromDatabase } from '@/Vibify/Database';
-import Tracks from "@/Vibify/Tracks";
-import Artist from "@/Vibify/Artist";
-import User from "@/Vibify/User";
-import user from "@/Vibify/User";
+import Track from "@/Vibify/Track/Track";
+import Artist from "@/Vibify/Artist/Artist";
+import User from "@/Vibify/User/User";
+import Genre from "@/Vibify/Genre/Genre";
+import TokenService from "@/Vibify/Tokens";
 
 dotenv.config();
 
@@ -23,31 +20,26 @@ class Spotify {
         redirectUri: this.redirectUri
     });
     private rateLimitPromise: Promise<void> | null = null;
-    tracks: Tracks;
+    tracks: Track;
     artist: Artist;
     user: User
+    genre: Genre;
+    tokenHandlerService: TokenService;
 
     constructor() {
-        this.tracks = new Tracks(this);
+        this.tracks = new Track(this);
         this.artist = new Artist(this);
-        this.user = new user(this)
+        this.user = new User(this)
+        this.genre = new Genre(this);
+        this.tokenHandlerService = new TokenService(this.spotifyApi);
     }
-
-    setSpotifyTokens = setSpotifyTokens;
-    getSpotifyTokens = getSpotifyTokens;
-    tokenHandler = tokenHandler;
-    refreshAccessToken = refreshAccessToken;
-    authorizationCodeGrant = authorizationCodeGrant;
-    deleteUser = deleteUserFromDatabase;
-    getSpotifyPlaylists = getSpotifyPlaylists;
-    getSpotifyPlaylist = getSpotifyPlaylist;
 
     private log(message: string): void {
         console.log(chalk.blue(`[Spotify] ${message}`));
     }
 
     async handler<T>(userId: string, action: () => Promise<T>): Promise<T> {
-        await this.tokenHandler(userId);
+        await this.tokenHandlerService.tokenHandler(userId);
         try {
             return await action();
         } catch (err: unknown) {
@@ -59,7 +51,7 @@ class Spotify {
             }
             console.log(chalk.red('Error in handler'), err);
             this.log('Token expired, refreshing tokens...');
-            await this.tokenHandler(userId);
+            await this.tokenHandlerService.tokenHandler(userId);
             return action();
         }
     }
