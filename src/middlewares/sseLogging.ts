@@ -5,6 +5,7 @@ import terminalImage from 'terminal-image';
 import terminalLink from 'terminal-link';
 import got from 'got';
 import imageType from 'image-type';
+import {log} from "@/types/spotify";
 
 const colors = {
     title: chalk.bold.green,
@@ -18,7 +19,7 @@ const colors = {
 };
 
 interface RequestWithLog extends Request {
-    log?: (message: string, type: string) => void;
+    log?: log;
     lastStartMessage?: string;
     logBuffer?: string[];
 }
@@ -28,8 +29,8 @@ const sseLoggingMiddleware = (req: RequestWithLog, res: Response, next: NextFunc
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    req.log = async (message: string, type: string) => {
-        if (type === 'image') {
+    req.log = async (message: string, type: string, images: boolean | undefined) => {
+        if (type === 'image' && images) {
             try {
                 const response = await got(message, {responseType: 'buffer'} as any);
                 const imageBuffer = response.body;

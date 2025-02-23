@@ -2,7 +2,7 @@ import express, {Request, Response, NextFunction} from 'express';
 import Spotify from '@/Vibify/Spotify';
 import authenticateApiKey from '@/middlewares/authenticateApiKey';
 import catchErrors from '@/middlewares/catchErrors';
-import {log, PaginationOptions, SpotifyAuthorizationResponse} from '@/types/spotify';
+import {log, RequestWithLog, SpotifyAuthorizationResponse} from '@/types/spotify';
 import sseLoggingMiddleware from '@/middlewares/sseLogging';
 
 const router = express.Router();
@@ -46,22 +46,21 @@ const setOptions = (req: RequestWithLog, _res: Response, next: NextFunction) => 
         after: req.query.after ? parseInt(req.query.after as string) : undefined,
         before: req.query.before ? parseInt(req.query.before as string) : undefined,
     };
+    req.monthOptions = {
+        month: req.query.month ? parseInt(req.query.month as string) : new Date().getMonth(),
+        year: req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear()
+    };
     if (req.query.sse === 'true') sseLoggingMiddleware(req, _res, next);
     else next();
 };
 
-interface RequestWithLog extends Request {
-    log?: log;
-    paginationOptions?: PaginationOptions;
-}
-
-const handleRoute = (handler: (req: RequestWithLog, res: Response, log: log) => Promise<unknown>) =>
+const handleRoute = (handler: (req: RequestWithLog, res: Response, log: log, logImages: boolean) => Promise<unknown>) =>
     catchErrors(async (req: RequestWithLog, res: Response) => {
         const useSSE = req.query.sse === 'true';
-        const log = useSSE && req.log ? req.log.bind(req) : () => {
-        };
+        const logImages = req.query.logimages !== undefined;
+        const log = useSSE && req.log ? (message: string, type: string) => req.log!(message, type, logImages) : () => {};
         try {
-            const result = await handler(req, res, log);
+            const result = await handler(req, res, log, logImages);
             if (useSSE) res.end();
             else res.status(200).json(result);
         } catch (error) {
@@ -106,6 +105,16 @@ router.get('/recently-played/:id', authenticateApiKey, setOptions, handlePaginat
 
 router.get('/currently-playing/:id', authenticateApiKey, setOptions, handleRoute(async (req: RequestWithLog, _res: Response, log: log) => {
     return await spotify.tracks.getCurrentPlayback(req.params.id, log);
+}));
+
+router.get('/playlist/create/:id', authenticateApiKey, setOptions, handleRoute(async (req: RequestWithLog, _res: Response, log: log) => {
+    const {name, description, public: isPublic} = req.query;
+
+    return await spotify.playlist.createSpotifyPlaylist(req.params.id, name as string, description as string, isPublic === 'true', req.monthOptions, log);
+}));
+
+router.get('/playlist/create-all/:id', authenticateApiKey, setOptions, handleRoute(async (req: RequestWithLog, _res: Response, log: log) => {
+    return await spotify.playlist.createSpotifyPlaylistForAllMonths(req.params.id, log);
 }));
 
 export default router;

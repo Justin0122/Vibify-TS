@@ -13,10 +13,9 @@ class UserService {
         this.spotify = spotify;
     }
 
-    async getSpotifyUser(userId: string, log: log): Promise<FormattedProfile> {
+    async getSpotifyUser(userId: string, log: log | undefined): Promise<FormattedProfile> {
         return this.spotify.handler(userId, async () => {
             const spotifyProfile = await this.spotify.spotifyApi.getMe();
-
             const formattedProfile: FormattedProfile = {
                 userId: spotifyProfile.body.id,
                 displayName: spotifyProfile.body.display_name,
@@ -34,14 +33,16 @@ class UserService {
                 uri: spotifyProfile.body.uri,
             };
 
-            log(`User Profile: ${formattedProfile.displayName} (${formattedProfile.userId})`, "start");
-            log(`Country: ${formattedProfile.country}`, "info");
-            log(`Email: ${formattedProfile.email}`, "info");
-            log(`Followers: ${formattedProfile.followers}`, "info");
-            log(`Spotify URL: ${formattedProfile.externalUrl}`, "info");
+            if (log) {
+                log(`User Profile: ${formattedProfile.displayName} (${formattedProfile.userId})`, "start");
+                log(`Country: ${formattedProfile.country}`, "info");
+                log(`Email: ${formattedProfile.email}`, "info");
+                log(`Followers: ${formattedProfile.followers}`, "info");
+                log(`Spotify URL: ${formattedProfile.externalUrl}`, "info");
 
-            if (formattedProfile.profileImage !== "No image available" && formattedProfile.profileImage.startsWith("http")) {
-                await log(formattedProfile.profileImage, "image");
+                if (formattedProfile.profileImage !== "No image available" && formattedProfile.profileImage.startsWith("http")) {
+                    await log(formattedProfile.profileImage, "image");
+                }
             }
 
             return formattedProfile;
@@ -96,10 +97,10 @@ class UserService {
     async authorizationCodeGrant(spotifyApi: SpotifyWebApi, code: string, id: string): Promise<SpotifyAuthorizationResponse> {
         try {
             const data = await spotifyApi.authorizationCodeGrant(code);
-            const { access_token, refresh_token, expires_in } = data.body;
+            const {access_token, refresh_token, expires_in} = data.body;
             const api_token = crypto.createHash('sha256').update(id + access_token).digest('hex');
             await this.insertUserIntoDatabase(id, access_token, refresh_token, expires_in, api_token);
-            return { api_token, userId: id };
+            return {api_token, userId: id};
         } catch (err) {
             console.log(chalk.red('Something went wrong!'), err);
             throw err;

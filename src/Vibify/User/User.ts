@@ -11,7 +11,7 @@ class User {
         this.userService = new UserService(spotify);
     }
 
-    async getSpotifyUser(userId: string, log: log): Promise<FormattedProfile> {
+    async getSpotifyUser(userId: string, log: log | undefined): Promise<FormattedProfile> {
         return this.userService.getSpotifyUser(userId, log);
     }
 

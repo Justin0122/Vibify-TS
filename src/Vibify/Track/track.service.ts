@@ -1,5 +1,5 @@
 import Spotify from "@/Vibify/Spotify";
-import {PaginationOptions} from "@/types/spotify";
+import {MonthOptions, PaginationOptions} from "@/types/spotify";
 import db from "@/db/database";
 import chalk from "chalk";
 import {log} from "@/types/spotify";
@@ -17,6 +17,16 @@ class TrackService {
             if (log) await this.logTracks(topTracks.body.items, log, logImages);
             return topTracks.body;
         });
+    }
+
+    async getLikedYears(userId: string): Promise<number[]> {
+        const userDbId = (await this.spotify.user.getFromDb(userId)).id;
+        return db('liked_tracks').where({user_id: userDbId}).distinct('year').select('year').orderBy('year', 'desc').pluck('year');
+    }
+
+    async getLikedMonths(userId: string, year: number): Promise<number[]> {
+        const userDbId = (await this.spotify.user.getFromDb(userId)).id;
+        return db('liked_tracks').where({user_id: userDbId, year}).distinct('month').select('month').orderBy('month', 'desc').pluck('month');
     }
 
     async getSavedTracks(userId: string, options: PaginationOptions): Promise<SpotifyApi.UsersSavedTracksResponse> {
@@ -146,6 +156,16 @@ class TrackService {
             .insert({track_id: trackId, name, artist_id: artistId})
             .onConflict('track_id')
             .ignore();
+    }
+
+    public async getTracksFromPeriod(user: string, monthOptions: MonthOptions): Promise<SpotifyApi.TrackObjectFull[]> {
+        const userId = await this.spotify.user.getId(user);
+        const {month, year} = monthOptions;
+        return db('liked_tracks')
+            .join('tracks', 'liked_tracks.track_id', 'tracks.id')
+            .join('artists', 'tracks.artist_id', 'artists.id')
+            .where({user_id: userId, month, year})
+            .select('tracks.track_id as uri', 'tracks.name as track_name', 'artists.name as artist_name');
     }
 }
 

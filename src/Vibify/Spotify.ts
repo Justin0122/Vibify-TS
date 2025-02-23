@@ -6,6 +6,7 @@ import Artist from "@/Vibify/Artist/Artist";
 import User from "@/Vibify/User/User";
 import Genre from "@/Vibify/Genre/Genre";
 import TokenService from "@/Vibify/Tokens";
+import Playlist from "@/Vibify/Playlist/Playlist";
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ class Spotify {
     artist: Artist;
     user: User
     genre: Genre;
+    playlist: Playlist;
     tokenHandlerService: TokenService;
 
     constructor() {
@@ -31,6 +33,7 @@ class Spotify {
         this.artist = new Artist(this);
         this.user = new User(this)
         this.genre = new Genre(this);
+        this.playlist = new Playlist(this);
         this.tokenHandlerService = new TokenService(this.spotifyApi);
     }
 
