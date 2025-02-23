@@ -41,7 +41,7 @@ router.get('/callback', catchErrors(async (req: Request, res: Response) => {
 
 const setOptions = (req: RequestWithLog, _res: Response, next: NextFunction) => {
     req.paginationOptions = {
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
+        limit: req.query.limit ? Math.min(parseInt(req.query.limit as string), 50) : 20,
         offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
         after: req.query.after ? parseInt(req.query.after as string) : undefined,
         before: req.query.before ? parseInt(req.query.before as string) : undefined,
@@ -97,6 +97,10 @@ router.get('/top/artists/:id', authenticateApiKey, setOptions, handlePaginationR
 
 router.get('/top/tracks/:id', authenticateApiKey, setOptions, handlePaginationRoute(async (req: RequestWithLog, _res: Response, log: log, logImages: boolean) => {
     return await spotify.tracks.getTopTracks(req.params.id, req.paginationOptions!, log, logImages);
+}));
+
+router.get('/liked/tracks/:id', authenticateApiKey, setOptions, handlePaginationRoute(async (req: RequestWithLog, _res: Response) => {
+    return await spotify.tracks.getSavedTracks(req.params.id, req.paginationOptions!);
 }));
 
 router.get('/recently-played/:id', authenticateApiKey, setOptions, handlePaginationRoute(async (req: RequestWithLog, _res: Response, log: log, logImages: boolean) => {
