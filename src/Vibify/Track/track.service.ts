@@ -106,29 +106,25 @@ class TrackService {
 
     async saveLikedTracks(userId: string, log: log): Promise<void> {
         return this.spotify.handler(userId, async () => {
-            let limit = 50;
-            const spotifyResponse = await this.getSavedTracks(userId, {limit: 1, offset: 0});
-            const total = spotifyResponse.total;
-            let totalFromDb = await this.LikedCount((await this.spotify.user.getFromDb(userId)).id);
+            const {total} = await this.getSavedTracks(userId, {limit: 1, offset: 0});
+            const userDbId = (await this.spotify.user.getFromDb(userId)).id;
+            let totalFromDb = await this.LikedCount(userDbId);
             log(`Spotify reports ${total} total liked tracks.`, 'info');
 
-            let offset = total - totalFromDb - 50;
-            if (offset < 0) {
-                offset = 0;
-                limit = total - totalFromDb;
-            }
+            let offset = Math.max(total - totalFromDb - 50, 0);
+            const limit = Math.max(total - totalFromDb, 0);
+
             if (limit <= 0) {
                 log('All tracks are already in the database.', 'success');
                 return;
             }
 
             while (totalFromDb < total) {
-                const spotifyResponse = await this.getSavedTracks(userId, {limit: limit, offset});
-
-                if (spotifyResponse.items.length > 0) {
-                    log(`Inserting ${spotifyResponse.items.length} new tracks into the database...`, 'info');
-                    await this.insertSavedTracks(userId, spotifyResponse.items);
-                    totalFromDb += spotifyResponse.items.length;
+                const {items} = await this.getSavedTracks(userId, {limit, offset});
+                if (items.length > 0) {
+                    log(`Inserting ${items.length} new tracks into the database...`, 'info');
+                    await this.insertSavedTracks(userId, items);
+                    totalFromDb += items.length;
                 }
                 offset -= 50;
             }
