@@ -122,7 +122,7 @@ class TrackService {
             log(`Spotify reports ${total} total liked tracks.`, 'info');
 
             let offset = Math.max(total - totalFromDb - 50, 0);
-            const limit = Math.max(total - totalFromDb, 0);
+            const limit = Math.min(Math.max(total - totalFromDb, 0), 50);
 
             if (limit <= 0) {
                 log('All tracks are already in the database.', 'success');
