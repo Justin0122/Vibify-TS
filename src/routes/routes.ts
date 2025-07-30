@@ -103,7 +103,7 @@ router.get('/liked/tracks/:id', authenticateApiKey, setOptions, handlePagination
     return await spotify.tracks.getSavedTracks(req.params.id, req.paginationOptions!);
 }));
 
-router.get('/recently-played/:id', authenticateApiKey, setOptions, handlePaginationRoute(async (req: RequestWithLog, _res: Response, log: log, logImages: boolean) => {
+router.get('/recent/tracks/:id', authenticateApiKey, setOptions, handlePaginationRoute(async (req: RequestWithLog, _res: Response, log: log, logImages: boolean) => {
     return await spotify.tracks.getRecentlyPlayedTracks(req.params.id, req.paginationOptions!, log, logImages);
 }));
 
