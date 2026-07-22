@@ -1,0 +1,45 @@
+---
+const links = [
+    { href: '/dashboard', label: 'Dashboard' },
+    { href: '/search', label: 'Search' },
+    { href: '/top', label: 'Top' },
+    { href: '/liked', label: 'Liked' },
+    { href: '/recent', label: 'Recent' },
+    { href: '/playlists', label: 'Playlists' },
+    { href: '/player', label: 'Player' },
+    { href: '/explorer', label: 'API Explorer' },
+];
+const current = Astro.url.pathname;
+---
+
+<nav class="sticky top-0 z-40 border-b border-white/10 bg-surface/95 backdrop-blur">
+    <div class="mx-auto flex max-w-5xl items-center gap-1 overflow-x-auto px-4 py-3">
+        <a href="/dashboard" class="mr-4 shrink-0 text-lg font-bold text-brand">Vibify</a>
+        {
+            links.map(link => (
+                <a
+                    href={link.href}
+                    class:list={[
+                        'shrink-0 rounded-full px-3 py-1.5 text-sm transition-colors',
+                        current.startsWith(link.href) ? 'bg-brand text-black font-semibold' : 'text-muted hover:bg-surface-hover hover:text-white',
+                    ]}
+                >
+                    {link.label}
+                </a>
+            ))
+        }
+        <button
+            id="logout-btn"
+            class="ml-auto shrink-0 rounded-full px-3 py-1.5 text-sm text-muted hover:bg-surface-hover hover:text-white"
+        >
+            Logout
+        </button>
+    </div>
+</nav>
+
+<script>
+    import { logout } from '../../stores/auth';
+    document.addEventListener('astro:page-load', () => {
+        document.getElementById('logout-btn')?.addEventListener('click', logout);
+    });
+</script>

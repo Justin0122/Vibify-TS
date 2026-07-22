@@ -1,0 +1,9 @@
+---
+import Base from '../layouts/Base.astro';
+import PlaylistGenerator from '../components/vue/PlaylistGenerator.vue';
+---
+
+<Base title="Vibify — Playlists">
+    <h1 class="mb-4 text-2xl font-bold">Playlists</h1>
+    <PlaylistGenerator client:load />
+</Base>

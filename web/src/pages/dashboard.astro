@@ -1,0 +1,15 @@
+---
+import Base from '../layouts/Base.astro';
+import ProfileCard from '../components/vue/ProfileCard.vue';
+---
+
+<Base title="Vibify — Dashboard">
+    <h1 class="mb-4 text-2xl font-bold">Dashboard</h1>
+    <ProfileCard client:load />
+    <div class="mt-6 grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+        <a href="/search" class="rounded-xl bg-surface-raised p-5 transition-colors hover:bg-surface-hover"><p class="text-2xl">🔎</p><p class="mt-1 font-semibold">Search</p><p class="text-sm text-muted">Find & play anything</p></a>
+        <a href="/top" class="rounded-xl bg-surface-raised p-5 transition-colors hover:bg-surface-hover"><p class="text-2xl">📈</p><p class="mt-1 font-semibold">Top</p><p class="text-sm text-muted">Your tracks & artists</p></a>
+        <a href="/playlists" class="rounded-xl bg-surface-raised p-5 transition-colors hover:bg-surface-hover"><p class="text-2xl">🗓️</p><p class="mt-1 font-semibold">Playlists</p><p class="text-sm text-muted">Monthly generator</p></a>
+        <a href="/player" class="rounded-xl bg-surface-raised p-5 transition-colors hover:bg-surface-hover"><p class="text-2xl">🎧</p><p class="mt-1 font-semibold">Player</p><p class="text-sm text-muted">Devices & queue</p></a>
+    </div>
+</Base>

@@ -1,0 +1,17 @@
+---
+import Base from '../layouts/Base.astro';
+import DevicesMenu from '../components/react/DevicesMenu';
+import QueuePanel from '../components/react/QueuePanel';
+---
+
+<Base title="Vibify — Player">
+    <h1 class="mb-4 text-2xl font-bold">Player</h1>
+    <p class="mb-4 text-sm text-muted">
+        The bottom bar controls whatever device is active. "Vibify Web" (this browser) appears as a device when the
+        Web Playback SDK can initialize — needs Premium, DRM-capable browser, and HTTPS or localhost.
+    </p>
+    <div class="grid gap-6 md:grid-cols-2">
+        <DevicesMenu client:load />
+        <QueuePanel client:load />
+    </div>
+</Base>

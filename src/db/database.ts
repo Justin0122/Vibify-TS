@@ -1,14 +1,14 @@
 import knex, { Knex } from 'knex';
-import dotenv from 'dotenv';
-dotenv.config();
+import config from '@/config';
 
 const db: Knex = knex({
     client: 'mysql2',
     connection: {
-        host: process.env.DB_HOST || 'localhost',
-        user: process.env.DB_USER || 'root',
-        password: process.env.DB_PASS || '7827',
-        database: process.env.DB_NAME || 'vibify'
+        host: config.db.host,
+        port: config.db.port,
+        user: config.db.user,
+        password: config.db.password,
+        database: config.db.name,
     },
 });
 

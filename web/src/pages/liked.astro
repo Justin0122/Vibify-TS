@@ -1,0 +1,9 @@
+---
+import Base from '../layouts/Base.astro';
+import LikedTracksBrowser from '../components/vue/LikedTracksBrowser.vue';
+---
+
+<Base title="Vibify — Liked">
+    <h1 class="mb-4 text-2xl font-bold">Liked tracks</h1>
+    <LikedTracksBrowser client:load />
+</Base>

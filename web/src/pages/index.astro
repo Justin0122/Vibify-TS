@@ -1,0 +1,17 @@
+---
+import { ClientRouter } from 'astro:transitions';
+import LoginForm from '../components/vue/LoginForm.vue';
+import '../styles/global.css';
+---
+
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Vibify — Login</title>
+        <ClientRouter />
+    </head>
+    <body class="min-h-screen">
+        <LoginForm client:load />
+    </body>
+</html>

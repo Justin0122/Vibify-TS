@@ -1,0 +1,9 @@
+---
+import Base from '../layouts/Base.astro';
+import RecentTracks from '../components/vue/RecentTracks.vue';
+---
+
+<Base title="Vibify — Recent">
+    <h1 class="mb-4 text-2xl font-bold">Recently played</h1>
+    <RecentTracks client:load />
+</Base>

@@ -1,0 +1,35 @@
+---
+import { ClientRouter } from 'astro:transitions';
+import Nav from '../components/astro/Nav.astro';
+import PlayerBar from '../components/react/PlayerBar';
+import '../styles/global.css';
+
+interface Props {
+    title?: string;
+    guard?: boolean;
+}
+
+const { title = 'Vibify', guard = true } = Astro.props;
+---
+
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{title}</title>
+        <ClientRouter />
+    </head>
+    <body class="min-h-screen pb-28" data-guard={guard ? 'true' : 'false'}>
+        <script>
+            import { requireAuth } from '../stores/auth';
+            document.addEventListener('astro:page-load', () => {
+                if (document.body.dataset.guard === 'true') requireAuth();
+            });
+        </script>
+        <Nav />
+        <main class="mx-auto max-w-5xl px-4 py-6">
+            <slot />
+        </main>
+        <PlayerBar client:load transition:persist="player" />
+    </body>
+</html>
